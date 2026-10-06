@@ -36,7 +36,7 @@ typedef unsigned long uint32_t;
 typedef unsigned __int32 uint32_t;
 #endif
 
-#if defined(__mips) || defined(__sparc)
+#if defined(__mips) || defined(__sparc) || defined(__m68k__)
 #define GOAT3D_BIGEND
 #endif
 

@@ -1,0 +1,31 @@
+src = $(filter-out src/imago_gl.c, $(wildcard src/*.c)) \
+	  $(wildcard zlib/*.c) \
+	  $(wildcard libpng/*.c) \
+	  $(wildcard jpeglib/*.c)
+
+CPU ?= 060
+ifeq ($(CPU), cf)
+	cpuflags = -mcpu=5475
+	o = atc
+else
+	cpuflags = -m68020-60
+	o = ato
+endif
+
+obj = $(src:.c=.$(o))
+alib = imago-$(CPU).ata
+
+TOOLPREFIX = m68k-atari-mintelf-
+CC = $(TOOLPREFIX)gcc
+AR = $(TOOLPREFIX)ar
+CFLAGS = $(cpuflags) -O2 -fomit-frame-pointer -Wno-main -Izlib -Ilibpng -Ijpeglib
+
+$(alib): $(obj)
+	$(AR) rcs $@ $(obj)
+
+%.$(o): %.c
+	$(CC) $(CFLAGS) -o $@ -c $<
+
+.PHONY: clean
+clean:
+	rm -f $(obj) $(alib)

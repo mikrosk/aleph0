@@ -1,0 +1,28 @@
+src = $(wildcard src/*.c)
+
+CPU ?= 060
+ifeq ($(CPU), cf)
+	cpuflags = -mcpu=5475
+	o = atc
+else
+	cpuflags = -m68020-60
+	o = ato
+endif
+
+obj = $(src:.c=.$(o))
+alib = goat3d-$(CPU).ata
+
+TOOLPREFIX = m68k-atari-mintelf-
+CC = $(TOOLPREFIX)gcc
+AR = $(TOOLPREFIX)ar
+CFLAGS = $(cpuflags) -O2 -fomit-frame-pointer -Iinclude -I.. -I../../src
+
+$(alib): $(obj)
+	$(AR) rcs $@ $(obj)
+
+%.$(o): %.c
+	$(CC) $(CFLAGS) -o $@ -c $<
+
+.PHONY: clean
+clean:
+	rm -f $(obj) $(alib)

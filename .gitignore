@@ -55,6 +55,11 @@ RUN
 .vs/
 *.emo
 *.ema
+*.ato
+*.atc
+*.ata
+!Makefile.ata
+*.gtp
 *.wasm
 *.js
 *.html

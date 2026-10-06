@@ -23,6 +23,9 @@
 static void mainloop_iter(void);
 static void handle_event(SDL_Event *ev);
 static void toggle_fullscreen(void);
+#ifdef __MINT__
+static int init_demosurf(void);
+#endif
 
 static int handle_sball_event(sball_event *ev);
 static void recalc_sball_matrix(float *xform);
@@ -35,7 +38,13 @@ static SDL_Surface *fbsurf;
 
 static int fbscale = -1;
 static int xsz, ysz, sdlbpp;
+#ifdef __MINT__
+static unsigned int sdl_flags = SDL_HWSURFACE | SDL_DOUBLEBUF | SDL_FULLSCREEN;
+static int native565;
+static SDL_Surface *demosurf;
+#else
 static unsigned int sdl_flags = SDL_SWSURFACE;
+#endif
 
 #define MODE(w, h)	\
 	{0, w, h, 16, w * 2, 5, 6, 5, 11, 5, 0, 0xf800, 0x7e0, 0x1f, 0xbadf00d, 2, 0}
@@ -62,15 +71,30 @@ int main(int argc, char **argv)
 	int s;
 	char *env;
 
+	if(demo_init_cfgopt(argc, argv) == -1) {
+		return 1;
+	}
+
+#ifdef __MINT__
+	fbscale = 1;
+	if(!opt.fullscreen) {
+		sdl_flags &= ~SDL_FULLSCREEN;
+	}
+	if(!opt.vsync) {
+		sdl_flags &= ~SDL_DOUBLEBUF;
+	}
+#else
 	if((env = getenv("FBSCALE")) && (s = atoi(env))) {
 		fbscale = s;
 		printf("Framebuffer scaling x%d\n", fbscale);
 	}
+#endif
 
 	xsz = FB_WIDTH * fbscale;
 	ysz = FB_HEIGHT * fbscale;
 
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_NOPARACHUTE);
+
 	if(!(fbsurf = SDL_SetVideoMode(xsz, ysz, 16, sdl_flags))) {
 		if(!(fbsurf = SDL_SetVideoMode(xsz, ysz, 32, sdl_flags))) {
 			fprintf(stderr, "failed to set video mode %dx%d %dbpp\n", FB_WIDTH, FB_HEIGHT, FB_BPP);
@@ -83,6 +107,12 @@ int main(int argc, char **argv)
 		printf("SDL 16bpp video mode\n");
 		sdlbpp = 16;
 	}
+#ifdef __MINT__
+	if(init_demosurf() == -1) {
+		SDL_Quit();
+		return 1;
+	}
+#endif
 	SDL_WM_SetCaption("aleph null / mindlapse (SDL)", 0);
 	SDL_ShowCursor(0);
 
@@ -97,7 +127,7 @@ int main(int argc, char **argv)
 	}
 
 	time_msec = 0;
-	if(demo_init_cfgopt(argc, argv) == -1 || au_init() == -1 || demo_init() == -1) {
+	if(au_init() == -1 || demo_init() == -1) {
 		SDL_Quit();
 		return 1;
 	}
@@ -217,6 +247,40 @@ void wait_vsync(void)
 	while(SDL_GetTicks() <= until);
 }
 
+#ifdef __MINT__
+void blit_frame(void *pixels, int vsync)
+{
+	int i, j;
+	uint16_t *sptr = pixels;
+	uint16_t *dptr;
+	SDL_Rect dst;
+
+	demo_post_draw(pixels);
+
+	dst.x = (fbsurf->w - FB_WIDTH) / 2;
+	dst.y = (fbsurf->h - FB_HEIGHT) / 2;
+
+	if(native565) {
+		demosurf->pixels = pixels;
+		SDL_BlitSurface(demosurf, 0, fbsurf, &dst);
+	} else {
+		if(SDL_MUSTLOCK(fbsurf)) {
+			SDL_LockSurface(fbsurf);
+		}
+		for(i=0; i<FB_HEIGHT; i++) {
+			dptr = (uint16_t*)((char*)fbsurf->pixels + (dst.y + i) * fbsurf->pitch) + dst.x;
+			for(j=0; j<FB_WIDTH; j++) {
+				*dptr++ = __builtin_bswap16(*sptr++);
+			}
+		}
+		if(SDL_MUSTLOCK(fbsurf)) {
+			SDL_UnlockSurface(fbsurf);
+		}
+	}
+	/* waits for vblank when double buffered */
+	SDL_Flip(fbsurf);
+}
+#else
 void blit_frame(void *pixels, int vsync)
 {
 	int i, j;
@@ -338,6 +402,7 @@ void blit_frame(void *pixels, int vsync)
 	}
 	SDL_Flip(fbsurf);
 }
+#endif
 
 int kb_isdown(int key)
 {
@@ -431,7 +496,40 @@ static void toggle_fullscreen(void)
 
 	fbsurf = newsurf;
 	sdl_flags = newflags;
+#ifdef __MINT__
+	if(init_demosurf() == -1) {
+		quit = 1;
+	}
+#endif
 }
+
+#ifdef __MINT__
+/* (re)create the surface used to blit the demo framebuffer, whenever the
+ * video mode changes
+ */
+static int init_demosurf(void)
+{
+	if(demosurf) {
+		SDL_FreeSurface(demosurf);
+		demosurf = 0;
+	}
+
+	/* green isn't checked: some drivers (e.g. NVDI on Falcon) report
+	 * bit 5 as overlay, giving Gmask 0x07c0 for a 565 layout
+	 */
+	native565 = fbsurf->format->Rmask == 0xf800 && fbsurf->format->Bmask == 0x001f;
+	if(native565) {
+		/* same format as the screen, so blitting is a plain copy */
+		demosurf = SDL_CreateRGBSurfaceFrom(0, FB_WIDTH, FB_HEIGHT, 16, FB_WIDTH * 2,
+				fbsurf->format->Rmask, fbsurf->format->Gmask, fbsurf->format->Bmask, 0);
+		if(!demosurf) {
+			fprintf(stderr, "failed to create demo surface: %s\n", SDL_GetError());
+			return -1;
+		}
+	}
+	return 0;
+}
+#endif
 
 
 

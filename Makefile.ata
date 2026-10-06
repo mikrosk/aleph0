@@ -1,0 +1,82 @@
+src = $(wildcard src/*.c) $(wildcard src/3dgfx/*.c) $(wildcard src/scr/*.c) \
+	  src/sdl/main.c src/sdl/timer.c src/sdl/sball.c src/sdl/auxmp.c
+
+CPU ?= 060
+ifeq ($(CPU), cf)
+	cpuflags = -mcpu=5475
+	cpudir = m5475
+	o = atc
+	bin = demo_cf.gtp
+else
+	cpuflags = -m68020-60
+	cpudir = m68020-60
+	o = ato
+	bin = demo.gtp
+endif
+
+obj = $(src:.c=.$(o)) src/data.$(o)
+alibs = libs/imago/imago-$(CPU).ata libs/anim/anim-$(CPU).ata \
+		libs/goat3d/goat3d-$(CPU).ata libs/assfile/assfile-$(CPU).ata
+
+inc = -Isrc -Isrc/3dgfx -Isrc/scr -Isrc/sdl -Ilibs -Ilibs/imago/src \
+	  -Ilibs/anim/src -Ilibs/goat3d/include
+def = -DNO_ASM -DBUILD_BIGENDIAN -DNDEBUG
+warn = -pedantic -Wall -Wno-unused-variable -Wno-unused-function -Wno-address
+opt = $(cpuflags) -O2 -fomit-frame-pointer -ffast-math
+#dbg = -g
+
+TOOLPREFIX = m68k-atari-mintelf-
+CC = $(TOOLPREFIX)gcc
+OBJCOPY = $(TOOLPREFIX)objcopy
+SDLCONFIG := $(shell $(CC) -print-sysroot)/usr/bin/$(cpudir)/sdl-config
+SDL_CFLAGS := $(shell $(SDLCONFIG) --cflags)
+SDL_LIBS := $(shell $(SDLCONFIG) --libs)
+
+CFLAGS = $(warn) $(opt) $(def) -fno-strict-aliasing $(dbg) $(inc) $(SDL_CFLAGS)
+LDFLAGS = $(cpuflags) -Wl,--msuper-memory -Wl,--stack,256k $(alibs) -lxmp-lite \
+	  $(SDL_LIBS)
+
+$(bin): $(obj) imago anim goat3d assfile
+	$(CC) -o $@ $(obj) $(LDFLAGS)
+
+%.$(o): %.c
+	$(CC) $(CFLAGS) -o $@ -c $<
+
+# loading.img holds little-endian 16bpp pixels
+src/data.$(o): data/loading.img
+	dd if=$< of=src/loading.be conv=swab status=none
+	cd src && $(OBJCOPY) -I binary -O elf32-m68k -B m68k \
+		--rename-section .data=.data,alloc,load,data,contents \
+		--redefine-sym _binary_loading_be_start=loading_pixels \
+		loading.be data.$(o)
+	rm -f src/loading.be
+
+.PHONY: libs
+libs: imago anim goat3d assfile
+
+.PHONY: imago
+imago:
+	$(MAKE) -C libs/imago -f Makefile.ata CPU=$(CPU)
+
+.PHONY: anim
+anim:
+	$(MAKE) -C libs/anim -f Makefile.ata CPU=$(CPU)
+
+.PHONY: goat3d
+goat3d:
+	$(MAKE) -C libs/goat3d -f Makefile.ata CPU=$(CPU)
+
+.PHONY: assfile
+assfile:
+	$(MAKE) -C libs/assfile -f Makefile.ata CPU=$(CPU)
+
+.PHONY: cleanlibs
+cleanlibs:
+	$(MAKE) -C libs/imago -f Makefile.ata CPU=$(CPU) clean
+	$(MAKE) -C libs/anim -f Makefile.ata CPU=$(CPU) clean
+	$(MAKE) -C libs/goat3d -f Makefile.ata CPU=$(CPU) clean
+	$(MAKE) -C libs/assfile -f Makefile.ata CPU=$(CPU) clean
+
+.PHONY: clean
+clean:
+	rm -f $(obj) $(bin)

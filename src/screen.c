@@ -236,7 +236,7 @@ int scr_change(struct screen *s)
 	return 0;
 }
 
-#ifndef NO_ASM
+#if !defined(NO_ASM) || defined(__MINT__)
 
 /*
 #ifdef _MSC_VER
