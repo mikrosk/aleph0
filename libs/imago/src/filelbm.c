@@ -125,7 +125,13 @@ static int check_file(struct img_io *io)
 	struct chdr hdr;
 	long pos = io->seek(0, SEEK_CUR, io->uptr);
 
-	while(read_header(io, &hdr) != -1) {
+	/* don't seek by a chunk size read from a file which isn't IFF at all */
+	if(read_header(io, &hdr) == -1 || !IS_IFF_CONTAINER(hdr.id)) {
+		io->seek(pos, SEEK_SET, io->uptr);
+		return -1;
+	}
+
+	do {
 		if(IS_IFF_CONTAINER(hdr.id)) {
 			type = img_read_uint32_be(io);
 			if(type == IFF_ILBM || type == IFF_PBM ) {
@@ -135,7 +141,7 @@ static int check_file(struct img_io *io)
 			hdr.size -= sizeof type;	/* so we will seek fwd correctly */
 		}
 		io->seek(hdr.size, SEEK_CUR, io->uptr);
-	}
+	} while(read_header(io, &hdr) != -1);
 
 	io->seek(pos, SEEK_SET, io->uptr);
 	return -1;
