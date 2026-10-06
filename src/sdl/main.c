@@ -13,6 +13,7 @@
 #include "gfxutil.h"
 #include "cpuid.h"
 #include "util.h"
+#include "audio.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -96,7 +97,7 @@ int main(int argc, char **argv)
 	}
 
 	time_msec = 0;
-	if(demo_init_cfgopt(argc, argv) == -1 || demo_init() == -1) {
+	if(demo_init_cfgopt(argc, argv) == -1 || au_init() == -1 || demo_init() == -1) {
 		SDL_Quit();
 		return 1;
 	}
@@ -122,6 +123,7 @@ int main(int argc, char **argv)
 #endif
 
 	demo_cleanup();
+	au_shutdown();
 	SDL_Quit();
 	return 0;
 }
