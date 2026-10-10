@@ -143,6 +143,16 @@ static int tun_init(void)
 	tex_ymask = tex_xmask;
 	tex_yshift = tex_xshift;
 
+	/* turn the 16.16 texture coordinates of the tunnel map into texel
+	 * offsets, so that drawing only needs to add the scroll offset and mask
+	 */
+	for(i=0; i<vxsz * vysz; i++) {
+		unsigned int tpacked = tunnel_map[i];
+		unsigned int tx = (((tpacked >> 16) & 0xffff) << tex_xshift) >> 16;
+		unsigned int ty = ((tpacked & 0xffff) << tex_yshift) >> 16;
+		tunnel_map[i] = (ty << tex_xshift) | tx;
+	}
+
 	if(gen_colormaps(&pixmap) == -1) {
 		return -1;
 	}
@@ -398,23 +408,6 @@ static void tun_keypress(int key)
 	}
 }
 
-static uint16_t tunnel_color(long toffs, long roffs, unsigned int tpacked, int fog)
-{
-	unsigned char texel;
-	unsigned int tx = (((tpacked >> 16) & 0xffff) << tex_xshift) >> 16;
-	unsigned int ty = ((tpacked & 0xffff) << tex_yshift) >> 16;
-#ifdef ROTATE
-	tx += roffs;
-#endif
-	ty += toffs;
-
-	tx &= tex_xmask;
-	ty &= tex_ymask;
-
-	texel = tex_pixels_curblur[(ty << tex_xshift) + tx];
-	return tunnel_cmap[fog >> 4][texel];	/* assumes NUM_TUNPAL == 16 */
-}
-
 static void draw_tunnel_range(unsigned short *pix, int xoffs, int yoffs, int starty, int num_lines)
 {
 	int i, j;
@@ -423,23 +416,32 @@ static void draw_tunnel_range(unsigned short *pix, int xoffs, int yoffs, int sta
 
 	unsigned int *pixels = (unsigned int*)pix + starty * (FB_WIDTH >> 1);
 
+	/* local copies, the pixel stores could alias the globals otherwise */
+	const unsigned char *tex = tex_pixels_curblur;
+	const uint16_t *cmap = tunnel_cmap[0];
+	const unsigned int tadd = (unsigned int)toffs << tex_xshift;
+	const unsigned int tmask = (tex_ymask << tex_xshift) | tex_xmask;
+	const int skip = vxsz - FB_WIDTH;
+
+	/* assumes NUM_TUNPAL == 16 */
+#define TUNPIX	cmap[((*fog++ >> 4) << 8) + tex[(*tmap++ + tadd) & tmask]]
+
 	for(i=0; i<num_lines; i++) {
 		for(j=0; j<(FB_WIDTH>>1); j++) {
 			unsigned int col;
-			int idx = j << 1;
-
 #ifdef BUILD_BIGENDIAN
-			col = (unsigned int)tunnel_color(toffs, 0, tmap[idx], fog[idx]) << 16;
-			col |= tunnel_color(toffs, 0, tmap[idx + 1], fog[idx + 1]);
+			col = (unsigned int)TUNPIX << 16;
+			col |= TUNPIX;
 #else
-			col = tunnel_color(toffs, 0, tmap[idx], fog[idx]);
-			col |= (unsigned int)tunnel_color(toffs, 0, tmap[idx + 1], fog[idx + 1]) << 16;
+			col = TUNPIX;
+			col |= (unsigned int)TUNPIX << 16;
 #endif
 			*pixels++ = col;
 		}
-		tmap += vxsz;
-		fog += vxsz;
+		tmap += skip;
+		fog += skip;
 	}
+#undef TUNPIX
 }
 
 static int gen_tables(void)
