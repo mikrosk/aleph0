@@ -30,6 +30,10 @@ static int init_emitter(struct emitter *em, int num, unsigned char *map, int xsz
 static int load_vfield(struct vfield *vf, const char *fname);
 static void vfield_eval(struct vfield *vf, int32_t x, int32_t y, struct ivec2 *dir);
 
+#ifdef RANDOMIZE_FIELD
+static uint32_t fld_seed = 1;
+#endif
+
 struct smktxt *create_smktxt(const char *imgname, const char *vfieldname)
 {
 	struct smktxt *stx;
@@ -355,7 +359,12 @@ static void vfield_eval(struct vfield *vf, int32_t x, int32_t y, struct ivec2 *d
 #endif
 
 #ifdef RANDOMIZE_FIELD
-	dir->x += rand() % RAND_FIELD_MAX - 32768;
-	dir->y += rand() % RAND_FIELD_MAX - 32768;
+	/* the C library rand() costs two 32 bit divisions per call, use a plain
+	 * LCG and scale its top 16 bits to [0, RAND_FIELD_MAX) instead
+	 */
+	fld_seed = fld_seed * 1664525 + 1013904223;
+	dir->x += (int32_t)((fld_seed >> 16) * RAND_FIELD_MAX >> 16) - 32768;
+	fld_seed = fld_seed * 1664525 + 1013904223;
+	dir->y += (int32_t)((fld_seed >> 16) * RAND_FIELD_MAX >> 16) - 32768;
 #endif
 }
