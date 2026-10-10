@@ -251,9 +251,10 @@ static void updateDotsVolumeBufferRadial(int t)
 	const int thres2 = thres1 + 3;
 
 	unsigned char* dst = volumeData;
+	const PolarData *polar = polarData;	/* the stores could alias the global */
 
 	for (i=0; i<size; ++i) {
-		PolarData *pData = &polarData[i];
+		const PolarData *pData = &polar[i];
 		const int r0 = pData->radius;
 		const int r1 = pData->latitude;
 		const int r2 = pData->longitude;
@@ -278,9 +279,10 @@ static void updateDotsVolumeBufferRadialRays(int t)
 	const int thres = 192;
 
 	unsigned char* dst = volumeData;
+	const PolarData *polar = polarData;	/* the stores could alias the global */
 
 	for (i=0; i<size; ++i) {
-		PolarData *pData = &polarData[i];
+		const PolarData *pData = &polar[i];
 		const int r0 = pData->radius;
 		const int r1 = pData->latitude;
 		const int r2 = pData->longitude;
