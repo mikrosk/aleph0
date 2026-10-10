@@ -134,7 +134,6 @@ static unsigned long startingTime;
 static unsigned char *heightmap;
 static unsigned short *lightmap;
 static int *bumpOffset;
-static int *bumpOffsetScreen;
 
 static unsigned short *bigLight[NUM_BIG_LIGHTS];
 static Point2D bigLightPoint[NUM_BIG_LIGHTS];
@@ -339,7 +338,6 @@ static int bump_init(void)
 	heightmap = malloc(sizeof(*heightmap) * hm_size);
 	lightmap = malloc(sizeof(*lightmap) * lm_size);
 	bumpOffset = malloc(sizeof(*bumpOffset) * hm_size);
-	bumpOffsetScreen = malloc(sizeof(*bumpOffsetScreen) * FB_WIDTH * FB_HEIGHT);
 
 	for (i = 0; i < NUM_BIG_LIGHTS; i++) {
 		bigLight[i] = malloc(sizeof(*bigLight[i]) * BIG_LIGHT_WIDTH * BIG_LIGHT_HEIGHT);
@@ -385,7 +383,6 @@ static void destroy(void)
 	free(heightmap);
 	free(lightmap);
 	free(bumpOffset);
-	free(bumpOffsetScreen);
 	free(particleLight);
 	free(bigLightEdges);
 	free(biggerLightEdges);
@@ -590,19 +587,6 @@ static void animateBigLights()
 #define SAFE_OFF_Y_TOP 60
 #define SAFE_OFF_Y_BOTTOM 60
 
-static void renderBump(unsigned short *vram)
-{
-	int x,y;
-
-	int* bumpSrc = bumpOffsetScreen;
-	for (y = 0; y < FB_HEIGHT; ++y) {
-		unsigned short* lightSrc = &lightmap[(y+LMAP_OFFSET_Y) * LMAP_WIDTH + LMAP_OFFSET_X];
-		for (x = 0; x < FB_WIDTH; ++x) {
-			*vram++ = lightSrc[*bumpSrc++];
-		}
-	}
-}
-
 static void updateCurrentParticleLightmapEraseMinMax(Point2D *p)
 {
 	const int x0 = p->x + LMAP_OFFSET_X;
@@ -717,28 +701,32 @@ static void eraseLightmapArea(int x0, int y0, int x1, int y1)
 	lightMaxY = 0;
 }
 
-static void renderBitmapLineBump(int u, int du, int* src, int* dst)
+/* The bump offsets are applied to the lightmap right away, instead of
+ * storing them for a separate pass, saving a write and a read of a
+ * 32 bit per pixel buffer.
+ */
+static void renderBitmapLineBump(int u, int du, int* src, unsigned short *lightSrc, unsigned short *vram)
 {
 	int x;
 	for (x=0; x<FB_WIDTH; ++x) {
 		int tu = (u >> FP_SCALE) & (HMAP_WIDTH - 1);
-		*dst++ = src[tu] + x;
+		*vram++ = lightSrc[src[tu] + x];
 		u += du;
 	};
 }
 
-static void blitBumpTexDefault(int t)
+static void blitBumpTexDefault(int t, unsigned short *vram)
 {
 	const int tt = t >> 5;
 
-	int* dst = bumpOffsetScreen;
 	int x,y;
 	for (y = 0; y < FB_HEIGHT; ++y) {
 		const int yi = (y + tt) & (HMAP_HEIGHT - 1);
 		int *src = &bumpOffset[yi * HMAP_WIDTH];
+		unsigned short *lightSrc = &lightmap[(y+LMAP_OFFSET_Y) * LMAP_WIDTH + LMAP_OFFSET_X];
 
 		for (x = 0; x < FB_WIDTH; ++x) {
-			*dst++ = src[x & (HMAP_WIDTH-1)] + x;
+			*vram++ = lightSrc[src[x & (HMAP_WIDTH-1)] + x];
 		}
 	}
 
@@ -746,11 +734,10 @@ static void blitBumpTexDefault(int t)
 	moveLightmapOffset.y = tt;
 }
 
-static void blitBumpTexWave(int t)
+static void blitBumpTexWave(int t, unsigned short *vram)
 {
 	const int tt = t >> 5;
 
-	int* dst = bumpOffsetScreen;
 	int y;
 	for (y = 0; y < FB_HEIGHT; ++y) {
 		const int yi = (y + tt) & (HMAP_HEIGHT - 1);
@@ -767,18 +754,18 @@ static void blitBumpTexWave(int t)
 		v = ((z >> 8) + yi) & (HMAP_HEIGHT - 1);
 		src = &bumpOffset[v * HMAP_WIDTH];
 
-		renderBitmapLineBump(u, du, src, dst);
+		renderBitmapLineBump(u, du, src, &lightmap[(y+LMAP_OFFSET_Y) * LMAP_WIDTH + LMAP_OFFSET_X], vram);
 
-		dst += FB_WIDTH;
+		vram += FB_WIDTH;
 	}
 }
 
-static void blitBumpTextureScript(int t)
+static void blitBumpTextureScript(int t, unsigned short *vram)
 {
 	if (startWaveBumpAndRGBlights == 0) {
-		blitBumpTexDefault(t);
+		blitBumpTexDefault(t, vram);
 	} else {
-		blitBumpTexWave(t);
+		blitBumpTexWave(t, vram);
 	}
 }
 
@@ -865,9 +852,7 @@ static void draw(void)
 
 		fadeToBlack16bpp(ft, lightmap + LMAP_OFFSET_Y * LMAP_WIDTH + LMAP_OFFSET_X, FB_WIDTH, FB_HEIGHT, LMAP_WIDTH);
 
-		blitBumpTextureScript(-2*t);
-
-		renderBump((unsigned short*)fb_pixels);
+		blitBumpTextureScript(-2*t, (unsigned short*)fb_pixels);
 	} else {
 		memset(fb_pixels, 0, FB_WIDTH * FB_HEIGHT * 2);
 	}
