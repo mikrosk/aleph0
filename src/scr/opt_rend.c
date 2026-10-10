@@ -7,6 +7,7 @@
 #include "gfxutil.h"
 #include "demo.h"
 #include "screen.h"
+#include "util.h"
 
 #define BLOB_SIZES_NUM_MAX 16
 #define BLOB_SIZEX_PAD 4
@@ -506,6 +507,70 @@ void clearBlobBuffer(unsigned char* buffer)
 	}
 }
 
+#ifdef M68K_ASM
+/* Needs 8bpp chunky buffer and then permutations of two pixels(256 * 256) to 32bit(two 16bit pixels) */
+void buffer8bppToVram(unsigned char *buffer, unsigned int *colMap16to32)
+{
+	int y;
+	long cnt;
+	unsigned short *src = (unsigned short*)buffer + ((POLKA_BUFFER_HEIGHT - FB_HEIGHT) / 2) * (POLKA_BUFFER_WIDTH / 2) + (POLKA_BUFFER_WIDTH - FB_WIDTH) / 4;
+	unsigned int *dst = (unsigned int*)fb_pixels;
+
+	for (y = 0; y < FB_HEIGHT; ++y) {
+		cnt = FB_WIDTH / 8 - 1;
+		__asm__ volatile (
+			"moveq	#0,%%d0\n\t"
+			"0:\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),(%0)+\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),(%0)+\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),(%0)+\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),(%0)+\n\t"
+			"dbra	%2,0b\n\t"
+			: "+a"(dst), "+a"(src), "+d"(cnt)
+			: "a"(colMap16to32)
+			: "d0", "cc", "memory");
+		src += POLKA_BUFFER_WIDTH / 2 - FB_WIDTH / 2;
+	}
+}
+
+void buffer8bppORwithVram(unsigned char* buffer, unsigned int* colMap16to32)
+{
+	int y;
+	long cnt;
+	unsigned short* src = (unsigned short*)buffer + ((POLKA_BUFFER_HEIGHT - FB_HEIGHT) / 2) * (POLKA_BUFFER_WIDTH / 2) + (POLKA_BUFFER_WIDTH - FB_WIDTH) / 4;
+	unsigned int* dst = (unsigned int*)fb_pixels;
+
+	for (y = 0; y < FB_HEIGHT; ++y) {
+		cnt = FB_WIDTH / 8 - 1;
+		__asm__ volatile (
+			"moveq	#0,%%d0\n\t"
+			"0:\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),%%d1\n\t"
+			"or.l	%%d1,(%0)+\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),%%d1\n\t"
+			"or.l	%%d1,(%0)+\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),%%d1\n\t"
+			"or.l	%%d1,(%0)+\n\t"
+			"move.w	(%1)+,%%d0\n\t"
+			"move.l	(%3,%%d0.l*4),%%d1\n\t"
+			"or.l	%%d1,(%0)+\n\t"
+			"dbra	%2,0b\n\t"
+			: "+a"(dst), "+a"(src), "+d"(cnt)
+			: "a"(colMap16to32)
+			: "d0", "d1", "cc", "memory");
+		src += POLKA_BUFFER_WIDTH / 2 - FB_WIDTH / 2;
+	}
+}
+
+#else	/* !M68K_ASM */
+
 /* Needs 8bpp chunky buffer and then permutations of two pixels(256 * 256) to 32bit(two 16bit pixels) */
 void buffer8bppToVram(unsigned char *buffer, unsigned int *colMap16to32)
 {
@@ -534,6 +599,8 @@ void buffer8bppORwithVram(unsigned char* buffer, unsigned int* colMap16to32)
 		src += POLKA_BUFFER_WIDTH / 2;
 	}
 }
+
+#endif	/* M68K_ASM */
 
 unsigned int *createColMap16to32(unsigned short *srcPal)
 {
@@ -1023,6 +1090,48 @@ void setPalGradient(int c0, int c1, int r0, int g0, int b0, int r1, int g1, int 
 
 /*rrrrr gggggg bbbbb   rrrrr gggggg bbbbb */
 
+#ifdef M68K_ASM
+void fadeToBlack16bpp(float ft, uint16_t* src, int width, int height, int stride)
+{
+	int y;
+	long cnt;
+	uint32_t s;
+	uint32_t* src32 = (uint32_t*)src;
+
+	if (ft > 0.99f) return;	/* if it's 1.0f just don't unecessary do extra stuff. If it's 0.0f we don't care for frame rate as it will be pitch black :) */
+
+	stride >>= 1;
+	width >>= 1;
+	if (width <= 0) return;
+	s = (uint32_t)(ft * 32);
+	for (y = 0; y < height; ++y) {
+		cnt = width;
+		/* same math as the C version: R-B-G- and -G-R-B components are
+		 * scaled by s/32 in two registers with room for the products
+		 */
+		__asm__ volatile (
+			"0:\n\t"
+			"move.l	(%0),%%d0\n\t"
+			"move.l	%%d0,%%d1\n\t"
+			"lsr.l	#5,%%d1\n\t"
+			"and.l	%3,%%d1\n\t"
+			"mulu.l	%2,%%d1\n\t"
+			"and.l	%4,%%d1\n\t"
+			"and.l	%5,%%d0\n\t"
+			"mulu.l	%2,%%d0\n\t"
+			"lsr.l	#5,%%d0\n\t"
+			"and.l	%5,%%d0\n\t"
+			"or.l	%%d1,%%d0\n\t"
+			"move.l	%%d0,(%0)+\n\t"
+			"subq.l	#1,%1\n\t"
+			"bne.s	0b\n\t"
+			: "+a"(src32), "+d"(cnt)
+			: "d"(s), "d"(0x07c0f83f), "d"(0xf81f07e0), "d"(0x07e0f81f)
+			: "d0", "d1", "cc", "memory");
+		src32 += stride - width;
+	}
+}
+#else	/* !M68K_ASM */
 void fadeToBlack16bpp(float ft, uint16_t* src, int width, int height, int stride)
 {
 	int x, y;
@@ -1046,3 +1155,4 @@ void fadeToBlack16bpp(float ft, uint16_t* src, int width, int height, int stride
 		src32 += stride - width;
 	}
 }
+#endif	/* M68K_ASM */
