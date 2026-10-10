@@ -3,13 +3,13 @@ src = $(wildcard src/*.c) $(wildcard src/3dgfx/*.c) $(wildcard src/scr/*.c) \
 
 CPU ?= 060
 ifeq ($(CPU), cf)
-	cpuflags = -mcpu=5475
-	cpudir = m5475
+	cpuflags = -mcpu=5475 -mfastcall
+	cpudir = m5475/mfastcall
 	o = atc
 	bin = demo_cf.gtp
 else
-	cpuflags = -m68020-60
-	cpudir = m68020-60
+	cpuflags = -m68020-60 -mfastcall
+	cpudir = m68020-60/mfastcall
 	o = ato
 	bin = demo.gtp
 endif
