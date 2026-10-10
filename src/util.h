@@ -17,6 +17,14 @@
 #define M_PI	3.1415926535
 #endif
 
+/* hand-written 680x0 code paths for the Atari (68020 and up, no ColdFire);
+ * -mtune=68060 leaves only __mc68060__ defined, so check all of them
+ */
+#if defined(__MINT__) && (defined(__mc68020__) || defined(__mc68030__) || \
+		defined(__mc68040__) || defined(__mc68060__))
+#define M68K_ASM
+#endif
+
 #if defined(__SUNPRO_C)
 #define INLINE inline
 #else
@@ -259,7 +267,61 @@ static unsigned int __inline get_cs(void)
 }
 #endif
 
-#ifdef NO_ASM
+#if defined(NO_ASM) && defined(M68K_ASM)
+static void INLINE memset16(void *dest, uint16_t val, int count)
+{
+	uint16_t *ptr = dest;
+	uint32_t *ptr32;
+	uint32_t val32;
+	long nblk;
+
+	if(count <= 0) return;
+	if((unsigned long)ptr & 2) {
+		*ptr++ = val;
+		count--;
+	}
+	val32 = ((uint32_t)val << 16) | val;
+	ptr32 = (uint32_t*)ptr;
+
+	/* 40 words per iteration with two movem.l stores of 10 registers;
+	 * movem only has a predecrement store mode, so fill from the end
+	 */
+	if((nblk = count / 40)) {
+		register uint32_t *end __asm__("a0") = ptr32 + nblk * 20;
+		register long cnt __asm__("d0") = nblk;
+		register uint32_t v __asm__("d1") = val32;
+
+		__asm__ volatile (
+			"move.l	%%d1,%%d2\n\t"
+			"move.l	%%d1,%%d3\n\t"
+			"move.l	%%d1,%%d4\n\t"
+			"move.l	%%d1,%%d5\n\t"
+			"move.l	%%d1,%%d6\n\t"
+			"move.l	%%d1,%%d7\n\t"
+			"move.l	%%d1,%%a1\n\t"
+			"move.l	%%d1,%%a2\n\t"
+			"move.l	%%d1,%%a3\n\t"
+			"0:\n\t"
+			"movem.l	%%d1-%%d7/%%a1-%%a3,-(%0)\n\t"
+			"movem.l	%%d1-%%d7/%%a1-%%a3,-(%0)\n\t"
+			"subq.l	#1,%1\n\t"
+			"bne.s	0b\n\t"
+			: "+a"(end), "+d"(cnt)
+			: "d"(v)
+			: "d2", "d3", "d4", "d5", "d6", "d7", "a1", "a2", "a3", "cc", "memory");
+
+		ptr32 += nblk * 20;
+		count -= nblk * 40;
+	}
+	while(count >= 2) {
+		*ptr32++ = val32;
+		count -= 2;
+	}
+	if(count) {
+		*(uint16_t*)ptr32 = val;
+	}
+}
+#elif defined(NO_ASM)
 static void INLINE memset16(void *dest, uint16_t val, int count)
 {
 	uint16_t *ptr = dest;
