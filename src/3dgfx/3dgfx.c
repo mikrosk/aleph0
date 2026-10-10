@@ -86,6 +86,7 @@ static void calc_grad(struct g3d_vertex *v);
 
 static void imm_flush(void);
 static INLINE void xform4_vec3(const float *mat, float *vec);
+static INLINE unsigned int frustum_outcode(const struct g3d_vertex *v);
 static INLINE void xform3_vec3(const float *mat, float *vec);
 static INLINE void xform4_vec4(const float *mat, float *vec);
 
@@ -636,7 +637,17 @@ void g3d_draw_indexed(int prim, const struct g3d_vertex *varr, int varr_size,
 
 		/* clipping */
 		if(st->opt & G3D_CLIP_FRUSTUM) {
+			/* only clip against the planes some vertex is outside of */
+			unsigned int oc_and = 0x3f, oc_or = 0;
+			for(i=0; i<vnum; i++) {
+				unsigned int oc = frustum_outcode(v + i);
+				oc_and &= oc;
+				oc_or |= oc;
+			}
+			if(oc_and) continue;	/* all outside of the same plane */
+
 			for(i=0; i<6; i++) {
+				if(!(oc_or & (1 << i))) continue;
 				memcpy(tmpv, v, vnum * sizeof *v);
 
 				if(clip_frustum(v, &vnum, tmpv, vnum, i) < 0) {
@@ -1038,6 +1049,19 @@ void g3d_shade(struct g3d_vertex *v)
 	v->r = r > 255 ? 255 : r;
 	v->g = g > 255 ? 255 : g;
 	v->b = b > 255 ? 255 : b;
+}
+
+/* bit n set: outside of the frustum plane n (see clip_frustum) */
+static INLINE unsigned int frustum_outcode(const struct g3d_vertex *v)
+{
+	unsigned int oc = 0;
+	if(v->x < -v->w) oc |= 1 << CLIP_LEFT;
+	if(v->x > v->w) oc |= 1 << CLIP_RIGHT;
+	if(v->y < -v->w) oc |= 1 << CLIP_BOTTOM;
+	if(v->y > v->w) oc |= 1 << CLIP_TOP;
+	if(v->z < -v->w) oc |= 1 << CLIP_NEAR;
+	if(v->z > v->w) oc |= 1 << CLIP_FAR;
+	return oc;
 }
 
 static INLINE void xform4_vec3(const float *mat, float *vec)
