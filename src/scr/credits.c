@@ -432,8 +432,13 @@ static void backdrop(float theta, float phi)
 	uint16_t *fbptr, pcol;
 	int cidx, offs = -10;
 	int startidx;
+	/* local copies, the pixel stores could alias the globals otherwise */
+	const int width = fb_width;
+	const uint16_t mcol = mountcol, mcol_mir = mountcol_mir;
+	const int *offstab;
 
 	startidx = cround64(theta * (float)BGOFFS_SIZE) / 360;
+	offstab = bgoffs;
 
 	hory = (fb_height - ((2 * fb_height * cround64((phi * 256.0f)) / VFOV) >> 8)) / 2;
 	if(hory > fb_height) hory = fb_height;
@@ -444,14 +449,14 @@ static void backdrop(float theta, float phi)
 		i = 0;
 		while(fbptr >= fb_pixels) {
 			pcol = bgcol[cidx < 0 ? 0 : (cidx >= BGCOL_SIZE ? BGCOL_SIZE - 1 : cidx)];
-			for(j=0; j<fb_width; j++) {
-				if(cidx < bgoffs[(startidx + j) & (BGOFFS_SIZE - 1)]) {
-					fbptr[j] = mountcol;
+			for(j=0; j<width; j++) {
+				if(cidx < offstab[(startidx + j) & (BGOFFS_SIZE - 1)]) {
+					fbptr[j] = mcol;
 				} else {
 					fbptr[j] = pcol;
 				}
 			}
-			fbptr -= fb_width;
+			fbptr -= width;
 			cidx++;
 		}
 		cidx = offs;
@@ -463,9 +468,9 @@ static void backdrop(float theta, float phi)
 	fbptr = fb_pixels + hory * fb_width;
 	for(i=hory; i<fb_height; i++) {
 		pcol = bgcol_mir[cidx < 0 ? 0 : (cidx >= BGCOL_SIZE ? BGCOL_SIZE - 1 : cidx)];
-		for(j=0; j<fb_width; j++) {
-			if(cidx < bgoffs[(startidx + j) & (BGOFFS_SIZE - 1)]) {
-				*fbptr++ = mountcol_mir;
+		for(j=0; j<width; j++) {
+			if(cidx < offstab[(startidx + j) & (BGOFFS_SIZE - 1)]) {
+				*fbptr++ = mcol_mir;
 			} else {
 				*fbptr++ = pcol;
 			}
