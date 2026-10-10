@@ -179,6 +179,12 @@ static void credits_update(void)
 #define TENT_NODES	12
 static const float tent_dist[] = {0.9, 0.7, 0.5};
 
+/* sin/cos of the phase offset of each tentacle node: sin is emulated on the
+ * 68040/68060, so sin(t + offset) is expanded with the angle addition formula
+ */
+static float node_sin[TENT_NODES], node_cos[TENT_NODES];
+static int node_tab_valid;
+
 static void credits_draw(void)
 {
 	int i;
@@ -238,10 +244,19 @@ static void credits_draw(void)
 static void left_side(float tint)
 {
 	int i, j, otherm, curm = 0;
-	float mat[2][16], angle, t, f, a, tampl, y;
+	float mat[2][16], angle, t, a, tampl, y, sin_t, cos_t;
 	cgm_vec3 pos[TENT_NODES], norm[TENT_NODES], pprev, nprev, nvec, pvec;
 	cgm_vec3 tang;
 	float rad[TENT_NODES], sprev;
+
+	if(!node_tab_valid) {
+		for(i=0; i<TENT_NODES; i++) {
+			float f = 1.0 + (float)i * 0.4;
+			node_sin[i] = sin(f);
+			node_cos[i] = cos(f);
+		}
+		node_tab_valid = 1;
+	}
 
 	if(dseq_started()) {
 		tampl = dseq_value(ev_ampl);
@@ -256,16 +271,17 @@ static void left_side(float tint)
 		g3d_translate(-3, y, 0);
 
 		t = (float)time_msec * 0.001 + j * (59.0 + dbg_num);
+		sin_t = sin(t);
+		cos_t = cos(t);
 
 		cgm_midentity(mat[1]);
 
 		for(i=0; i<TENT_NODES; i++) {
 			otherm = (curm + 1) & 1;
-			f = 1.0 + (float)i * 0.4;
 			a = cgm_lerp(0.15f, 0.2 + (float)(i + 1) * 0.06, tampl);
 			cgm_midentity(mat[curm]);
 			cgm_mtranslate(mat[curm], 0, tent_dist[j], 0);
-			angle = sin(t + f) * a;
+			angle = (sin_t * node_cos[i] + cos_t * node_sin[i]) * a;	/* sin(t + f) */
 			cgm_mrotate_z(mat[curm], angle);
 			cgm_mmul(mat[curm], mat[otherm]);
 
@@ -375,7 +391,7 @@ static void right_side(float tint)
 		}
 		t = y / 5.8f;
 		if(t < 0.0f) t = 0.0f; else if(t > 1.0f) t = 1.0f;
-		fade = sin(t * CGM_PI);
+		fade = cos_hpi(t * CGM_PI - CGM_PI / 2.0f);	/* sin(t * pi) */
 		if(fade < 0.01) {
 			y -= DY;
 			continue;
