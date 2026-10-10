@@ -89,6 +89,11 @@ static long start_time;
 static float cam_theta, cam_phi;
 static float cam_dist = 8;
 
+/* the ring of vertices around each tentacle node, sin/cos are emulated on
+ * the 68060 and the angles are the same for every ring
+ */
+static float ring_cos[TENT_UVERTS], ring_sin[TENT_UVERTS];
+
 static struct thing thing;
 static struct g3d_mesh sphmesh;
 static struct g3d_mesh tentmesh[NUM_TENT];
@@ -116,6 +121,14 @@ struct screen *hairball_screen(void)
 
 static int hball_init(void)
 {
+	int i;
+
+	for(i=0; i<TENT_UVERTS; i++) {
+		float theta = (float)i * M_PI * 2.0f / (float)TENT_UVERTS;
+		ring_cos[i] = cos(theta);
+		ring_sin[i] = sin(theta);
+	}
+
 	if(load_image(&envmap, "data/myenvmap.jpg") == -1) {
 		fprintf(stderr, "hairball: failed to load envmap\n");
 		return -1;
@@ -489,7 +502,7 @@ static void update_tentacle(struct g3d_mesh *mesh, int tidx)
 {
 	int i, j;
 	cgm_vec3 vi, vj, vk;
-	float theta, xform[16];
+	float xform[16];
 	cgm_vec3 cent, v, prev, next;
 	struct g3d_vertex *vptr;
 	struct tentacle *tent;
@@ -524,8 +537,7 @@ static void update_tentacle(struct g3d_mesh *mesh, int tidx)
 		xform[15] = 1.0f;
 
 		for(j=0; j<TENT_UVERTS; j++) {
-			theta = (float)j * M_PI * 2.0f / (float)TENT_UVERTS;
-			cgm_vcons(&v, cos(theta), sin(theta), 0);
+			cgm_vcons(&v, ring_cos[j], ring_sin[j], 0);
 
 			cgm_vmul_m3v3(&v, xform);
 			vptr->nx = v.x;
