@@ -641,6 +641,57 @@ void blendfb_rle(uint16_t *fb, int x, int y, struct image *img)
 			} else {
 				unsigned char *aptr = aline + sx;
 				uint16_t *fbptr = fb + x;
+#ifdef M68K_ASM
+				/* Same math as the C loop below, done per component:
+				 * ((dest * (280 - alpha)) >> 8) + src, wrapping within the
+				 * component. Scaling the masked component in place and
+				 * masking again after the shift gives the same bits as
+				 * unpacking to 8 bits and packing back.
+				 */
+				long cnt = len;
+				__asm__ volatile (
+					"0:\n\t"
+					"moveq	#0,%%d0\n\t"
+					"move.b	(%2)+,%%d0\n\t"
+					"move.l	#280,%%d4\n\t"
+					"sub.l	%%d0,%%d4\n\t"
+					"move.w	(%1),%%d1\n\t"
+					"move.w	(%0)+,%%d5\n\t"
+					/* red */
+					"move.w	%%d1,%%d2\n\t"
+					"and.w	#0xf800,%%d2\n\t"
+					"mulu.w	%%d4,%%d2\n\t"
+					"lsr.l	#8,%%d2\n\t"
+					"and.w	#0xf800,%%d2\n\t"
+					"move.w	%%d5,%%d3\n\t"
+					"and.w	#0xf800,%%d3\n\t"
+					"add.w	%%d3,%%d2\n\t"
+					/* green */
+					"move.w	%%d1,%%d3\n\t"
+					"and.w	#0x07e0,%%d3\n\t"
+					"mulu.w	%%d4,%%d3\n\t"
+					"lsr.l	#8,%%d3\n\t"
+					"and.w	#0x07e0,%%d3\n\t"
+					"move.w	%%d5,%%d0\n\t"
+					"and.w	#0x07e0,%%d0\n\t"
+					"add.w	%%d0,%%d3\n\t"
+					"and.w	#0x07e0,%%d3\n\t"
+					"or.w	%%d3,%%d2\n\t"
+					/* blue */
+					"and.w	#0x001f,%%d1\n\t"
+					"mulu.w	%%d4,%%d1\n\t"
+					"lsr.w	#8,%%d1\n\t"
+					"and.w	#0x001f,%%d5\n\t"
+					"add.w	%%d5,%%d1\n\t"
+					"and.w	#0x001f,%%d1\n\t"
+					"or.w	%%d1,%%d2\n\t"
+					"move.w	%%d2,(%1)+\n\t"
+					"subq.l	#1,%3\n\t"
+					"bne.s	0b\n\t"
+					: "+a"(pixptr), "+a"(fbptr), "+a"(aptr), "+d"(cnt)
+					:
+					: "d0", "d1", "d2", "d3", "d4", "d5", "cc", "memory");
+#else
 				for(i=0; i<len; i++) {
 					unsigned int sr, sg, sb, dr, dg, db;
 					unsigned int sa = aptr[i];
@@ -663,6 +714,7 @@ void blendfb_rle(uint16_t *fb, int x, int y, struct image *img)
 					db = (UNPACK_B16(dcol) * da >> 8) + sb;
 					fbptr[i] = PACK_RGB16(dr, dg, db);
 				}
+#endif
 			}
 			sx += len;
 			x = endx;
