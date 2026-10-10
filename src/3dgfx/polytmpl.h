@@ -167,6 +167,33 @@ void POLYFILL(struct pvertex *varr)
 	if(top < 0) top = 0;
 	if(bot >= pfill_fb.height) bot = pfill_fb.height - 1;
 
+	/* copies of the globals: the pixel stores could alias them otherwise,
+	 * forcing a reload in every iteration of the span loop
+	 */
+	{
+	const int l_scanlen = pfill_fb.scanlen;
+#ifdef GOURAUD
+	const int32_t l_drdx = pgrad.drdx, l_dgdx = pgrad.dgdx, l_dbdx = pgrad.dbdx;
+#ifdef BLEND_ALPHA
+	const int32_t l_dadx = pgrad.dadx;
+#endif
+#else
+	const int l_flat_r = varr[0].r, l_flat_g = varr[0].g, l_flat_b = varr[0].b;
+	const int l_flat_a = varr[0].a;
+#endif	/* GOURAUD */
+#ifdef TEXMAP
+	const int32_t l_dudx = pgrad.dudx, l_dvdx = pgrad.dvdx;
+	const int l_tex_ush = 16 - pfill_tex.xshift, l_tex_vsh = 16 - pfill_tex.yshift;
+	const int l_tex_xshift = pfill_tex.xshift;
+	const unsigned int l_tex_xmask = pfill_tex.xmask, l_tex_ymask = pfill_tex.ymask;
+	const g3d_pixel *l_tex_pixels = pfill_tex.pixels;
+#endif	/* TEXMAP */
+#ifdef ZBUF
+	const int32_t l_dzdx = pgrad.dzdx;
+	uint32_t *l_zbuf = pfill_zbuf;
+	const int l_fb_width = pfill_fb.width;
+#endif	/* ZBUF */
+
 	fbptr = pfill_fb.pixels + top * pfill_fb.scanlen;
 	for(i=top; i<=bot; i++) {
 		start = left[i].x;
@@ -191,7 +218,7 @@ void POLYFILL(struct pvertex *varr)
 #endif	/* TEXMAP */
 #ifdef ZBUF
 		z = left[i].z;
-		zptr = pfill_zbuf + i * pfill_fb.width + start;
+		zptr = l_zbuf + i * l_fb_width + start;
 #endif	/* ZBUF */
 
 		pptr = fbptr + start;
@@ -207,23 +234,23 @@ void POLYFILL(struct pvertex *varr)
 #endif
 #ifdef ZBUF
 			uint32_t cz = z;
-			z += pgrad.dzdx;
+			z += l_dzdx;
 
 			if(cz <= *zptr) {
 				*zptr++ = cz;
 			} else {
 				/* ZFAIL: advance all attributes and continue */
 #ifdef GOURAUD
-				r += pgrad.drdx;
-				g += pgrad.dgdx;
-				b += pgrad.dbdx;
+				r += l_drdx;
+				g += l_dgdx;
+				b += l_dbdx;
 #ifdef BLEND_ALPHA
-				a += pgrad.dadx;
+				a += l_dadx;
 #endif
 #endif	/* GOURAUD */
 #ifdef TEXMAP
-				tu += pgrad.dudx;
-				tv += pgrad.dvdx;
+				tu += l_dudx;
+				tv += l_dvdx;
 #endif	/* TEXMAP */
 				/* skip pixel */
 				pptr++;
@@ -239,23 +266,23 @@ void POLYFILL(struct pvertex *varr)
 			cr = r < 0 ? 0 : (r >> COLOR_SHIFT);
 			cg = g < 0 ? 0 : (g >> COLOR_SHIFT);
 			cb = b < 0 ? 0 : (b >> COLOR_SHIFT);
-			r += pgrad.drdx;
-			g += pgrad.dgdx;
-			b += pgrad.dbdx;
+			r += l_drdx;
+			g += l_dgdx;
+			b += l_dbdx;
 #endif	/* GOURAUD */
 #ifdef TEXMAP
-			tx = (tu >> (16 - pfill_tex.xshift)) & pfill_tex.xmask;
-			ty = (tv >> (16 - pfill_tex.yshift)) & pfill_tex.ymask;
-			texel = pfill_tex.pixels[(ty << pfill_tex.xshift) + tx];
+			tx = (tu >> l_tex_ush) & l_tex_xmask;
+			ty = (tv >> l_tex_vsh) & l_tex_ymask;
+			texel = l_tex_pixels[(ty << l_tex_xshift) + tx];
 
-			tu += pgrad.dudx;
-			tv += pgrad.dvdx;
+			tu += l_dudx;
+			tv += l_dvdx;
 
 #ifndef GOURAUD
 			/* for flat textured, cr,cg,cb would not be initialized */
-			cr = varr[0].r;
-			cg = varr[0].g;
-			cb = varr[0].b;
+			cr = l_flat_r;
+			cg = l_flat_g;
+			cb = l_flat_b;
 #endif	/* !GOURAUD */
 			/* This is not correct, should be /255, but it's much faster
 			 * to shift by 8 (/256), and won't make a huge difference
@@ -278,9 +305,9 @@ void POLYFILL(struct pvertex *varr)
 #ifdef GOURAUD
 			alpha = a >> COLOR_SHIFT;
 			inv_alpha = 255 - alpha;
-			a += pgrad.dadx;
+			a += l_dadx;
 #else
-			alpha = varr[0].a;
+			alpha = l_flat_a;
 #endif
 			inv_alpha = 255 - alpha;
 			fbcol = *pptr;
@@ -307,7 +334,8 @@ void POLYFILL(struct pvertex *varr)
 			*pptr++ = color;
 #endif
 		}
-		fbptr += pfill_fb.scanlen;
+		fbptr += l_scanlen;
+	}
 	}
 }
 
