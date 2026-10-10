@@ -8,7 +8,7 @@ ifeq ($(CPU), cf)
 	o = atc
 	bin = demo_cf.gtp
 else
-	cpuflags = -m68020-60 -mfastcall
+	cpuflags = -m68020-60 -mtune=68060 -mfastcall
 	cpudir = m68020-60/mfastcall
 	o = ato
 	bin = demo.gtp

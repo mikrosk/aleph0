@@ -5,7 +5,7 @@ ifeq ($(CPU), cf)
 	cpuflags = -mcpu=5475 -mfastcall
 	o = atc
 else
-	cpuflags = -m68020-60 -mfastcall
+	cpuflags = -m68020-60 -mtune=68060 -mfastcall
 	o = ato
 endif
 
