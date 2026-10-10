@@ -109,6 +109,16 @@ static INLINE void fast_normalize(float *v)
 	v[2] *= s;
 }
 
+/* cosine for |x| <= pi/2 as a polynomial, accurate to about 1e-7. The
+ * 68040 and 68060 emulate fsin/fcos in software, which is much slower.
+ */
+static INLINE float cos_hpi(float x)
+{
+	float x2 = x * x;
+	return 1.0f + x2 * (-1.0f / 2.0f + x2 * (1.0f / 24.0f + x2 * (-1.0f / 720.0f +
+			x2 * (1.0f / 40320.0f + x2 * (-1.0f / 3628800.0f + x2 * (1.0f / 479001600.0f))))));
+}
+
 extern uint32_t perf_start_count, perf_interval_count;
 
 #ifdef __WATCOMC__

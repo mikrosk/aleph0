@@ -330,7 +330,7 @@ static void hex_draw(void)
 		dy = pos.z - tile->y;
 		dist = (dx * dx + dy * dy) * 0.45f;
 		d = dist > CGM_PI / 2.0f ? CGM_PI / 2.0f : dist;
-		t = cos(d);
+		t = cos_hpi(d);
 		newh = t * 3.0f;
 
 		if(newh > tile->height) {
