@@ -30,6 +30,7 @@
 
 static void screen_evtrig(dseq_event *ev, enum dseq_trig_mask trig, void *cls);
 static void end_evtrig(dseq_event *ev, enum dseq_trig_mask trig, void *cls);
+static void part_stats(const char *next_name);
 static void init_mmx_routines(void);
 
 int fb_width, fb_height, fb_bpp, fb_scan_size;
@@ -56,6 +57,12 @@ static int prev_mx, prev_my, mouse_dx, mouse_dy;
 static unsigned int bmask_diff, prev_bmask;
 
 static unsigned long nframes;
+
+/* per-part framerate, printed when each part ends */
+static const char *part_name;
+static unsigned long part_start_frame;
+static long part_start_msec;
+
 static int con_active;
 static int running, show_dseq_dbg;
 static struct screen *runonlypart;
@@ -196,6 +203,8 @@ void demo_cleanup(void)
 	}
 	scr_shutdown();
 	g3d_destroy();
+
+	part_stats(0);	/* in case the demo was interrupted */
 
 	if(time_msec) {
 		float sec = (float)time_msec / 1000.0f;
@@ -528,19 +537,43 @@ void mouse_orbit_update(float *theta, float *phi, float *dist)
 	}
 }
 
+static void part_stats(const char *next_name)
+{
+	unsigned long frames;
+	long msec;
+
+	if(part_name) {
+		frames = nframes - part_start_frame;
+		msec = time_msec - part_start_msec;
+		if(msec > 0) {
+			printf("%-12s %5lu frames in %6.2f sec: %6.2f fps\n", part_name, frames,
+					(float)msec / 1000.0f, (float)frames * 1000.0f / (float)msec);
+		}
+	}
+	part_name = next_name;
+	part_start_frame = nframes;
+	part_start_msec = time_msec;
+}
+
 /* process demo sequence triggers for screen changes */
 static void screen_evtrig(dseq_event *ev, enum dseq_trig_mask trig, void *cls)
 {
 	int scrno = (intptr_t)cls;
+	struct screen *scr;
+
 	if(runonlypart && scr_screen(scrno) != runonlypart) {
 		dseq_stop();
 		return;
+	}
+	if((scr = scr_screen(scrno)) && scr->name != part_name) {
+		part_stats(scr->name);
 	}
 	change_screen(scrno);
 }
 
 static void end_evtrig(dseq_event *ev, enum dseq_trig_mask trig, void *cls)
 {
+	part_stats(0);
 	demo_quit();
 }
 
