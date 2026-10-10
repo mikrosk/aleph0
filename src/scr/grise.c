@@ -337,6 +337,7 @@ static void draw(void)
 	int scrolledIndex;
 	struct rbnode *node, *bitmap_node = 0;
 	int anim, show_logo;
+	int fading, dst_skip;
 
 	/*******************************************************************************/
 	if (!allSystemsGo) {
@@ -359,13 +360,25 @@ static void draw(void)
 	}
 	scroll = MIN_SCROLL + (MAX_SCROLL - MIN_SCROLL) * anim / FB_WIDTH;
 
+	/* Unless fading out, which shifts the image down, the horizon and the
+	 * displaced reflection are written straight to the framebuffer, saving
+	 * a copy of the whole effect buffer
+	 */
+	fading = dseq_isactive(ev_fadeout);
+
 	/* First, render the horizon */
-	dst = effectBuffer + EFFECT_BUFFER_PADDING;
+	if(fading) {
+		dst = effectBuffer + EFFECT_BUFFER_PADDING;
+		dst_skip = EFFECT_BUFFER_W;
+	} else {
+		dst = fb_pixels;
+		dst_skip = FB_WIDTH;
+	}
 	src = artBuffer + scroll;
 	for (scanline = 0; scanline < HORIZON_HEIGHT; scanline++) {
 		memcpy(dst, src, FB_WIDTH * 2);
 		src += artW;
-		dst += EFFECT_BUFFER_W;
+		dst += dst_skip;
 	}
 
 	/* Create scroll offsets for all scanlines of the normalmap */
@@ -392,8 +405,12 @@ static void draw(void)
 	}*/
 
 	/* Perform displacement */
-	dst = effectBuffer + HORIZON_HEIGHT * EFFECT_BUFFER_W + EFFECT_BUFFER_PADDING;
-	src = dst + EFFECT_BUFFER_W; /* The pixels to be displaced are 1 scanline below */
+	src = effectBuffer + (HORIZON_HEIGHT + 1) * EFFECT_BUFFER_W + EFFECT_BUFFER_PADDING;
+	if(fading) {
+		dst = src - EFFECT_BUFFER_W; /* The pixels to be displaced are 1 scanline below */
+	} else {
+		dst = fb_pixels + HORIZON_HEIGHT * FB_WIDTH;
+	}
 	dispScanline = displacementMap;
 	for (scanline = 0; scanline < REFLECTION_HEIGHT; scanline++) {
 
@@ -416,7 +433,7 @@ static void draw(void)
 			*dst++ = src[i + d];
 		}
 		src += EFFECT_BUFFER_W;
-		dst += EFFECT_BUFFER_W - FB_WIDTH;
+		dst += dst_skip - FB_WIDTH;
 		dispScanline += artW;
 	}
 
@@ -431,19 +448,8 @@ static void draw(void)
 	src = effectBuffer + EFFECT_BUFFER_PADDING;
 	dst = fb_pixels;
 
-	if(!dseq_isactive(ev_fadeout)) {
-		pary = 0;
-		for (scanline = 0; scanline < FB_HEIGHT; scanline++) {
-			memcpy(dst, src, FB_WIDTH * 2);
-			/*
-			oldTv(dst, src,
-				rScale(scanline, time_sec), rShift(scanline, time_sec),
-				gScale(scanline, time_sec), gShift(scanline, time_sec),
-				bScale(scanline, time_sec), bShift(scanline, time_sec));
-				*/
-			src += EFFECT_BUFFER_W;
-			dst += FB_WIDTH;
-		}
+	if(!fading) {
+		pary = 0;	/* already in the framebuffer */
 	} else {
 		float t = dseq_param(ev_fadeout);
 		float val = cgm_logerp(1, 240, t);
