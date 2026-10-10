@@ -530,6 +530,57 @@ static void start(long trans_time)
 
 #define BLUR_OUTSIDE_OFFSET 8
 
+#ifdef M68K_ASM
+static void blurBuffer(unsigned char *buffer)
+{
+	int y, yc;
+	long cnt;
+	unsigned int* b = (unsigned int*)buffer + ((POLKA_BUFFER_HEIGHT - FB_HEIGHT) / 2 - BLUR_OUTSIDE_OFFSET) * (POLKA_BUFFER_WIDTH / 4) + (POLKA_BUFFER_WIDTH - FB_WIDTH) / 8;
+	unsigned char *b0, *b1;
+
+	for (y = 0; y < FB_HEIGHT + 2 * BLUR_OUTSIDE_OFFSET; ++y) {
+		yc = (y - FB_HEIGHT / 2) >> 4;
+		/* xc = (x - FB_WIDTH / 8) >> 2 is constant for each group of 4
+		 * longwords and grows by one from group to group, so the b0
+		 * source moves back by 2 bytes and b1 forward by 1 byte
+		 */
+		b0 = (unsigned char*)(b - 2*yc * (POLKA_BUFFER_WIDTH / 4)) + 2 * (FB_WIDTH / 32);
+		b1 = (unsigned char*)(b + yc * (POLKA_BUFFER_WIDTH / 4)) - FB_WIDTH / 32;
+		cnt = FB_WIDTH / 16 - 1;
+
+		__asm__ volatile (
+			"0:\n\t"
+			"move.l	(%1)+,%%d0\n\t"
+			"add.l	(%2)+,%%d0\n\t"
+			"lsr.l	#1,%%d0\n\t"
+			"and.l	%4,%%d0\n\t"
+			"move.l	%%d0,(%0)+\n\t"
+			"move.l	(%1)+,%%d0\n\t"
+			"add.l	(%2)+,%%d0\n\t"
+			"lsr.l	#1,%%d0\n\t"
+			"and.l	%4,%%d0\n\t"
+			"move.l	%%d0,(%0)+\n\t"
+			"move.l	(%1)+,%%d0\n\t"
+			"add.l	(%2)+,%%d0\n\t"
+			"lsr.l	#1,%%d0\n\t"
+			"and.l	%4,%%d0\n\t"
+			"move.l	%%d0,(%0)+\n\t"
+			"move.l	(%1)+,%%d0\n\t"
+			"add.l	(%2)+,%%d0\n\t"
+			"lsr.l	#1,%%d0\n\t"
+			"and.l	%4,%%d0\n\t"
+			"move.l	%%d0,(%0)+\n\t"
+			"subq.l	#2,%1\n\t"
+			"addq.l	#1,%2\n\t"
+			"dbra	%3,0b\n\t"
+			: "+a"(b), "+a"(b0), "+a"(b1), "+d"(cnt)
+			: "d"(0x7f7f7f7f)
+			: "d0", "cc", "memory");
+
+		b += POLKA_BUFFER_WIDTH / 4 - FB_WIDTH / 4;
+	}
+}
+#else
 static void blurBuffer(unsigned char *buffer)
 {
 	int x, y;
@@ -554,6 +605,7 @@ static void blurBuffer(unsigned char *buffer)
 		b += POLKA_BUFFER_WIDTH / 4 - FB_WIDTH / 4;
 	}
 }
+#endif
 
 static void draw(void)
 {
