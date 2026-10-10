@@ -282,6 +282,20 @@ void blur_xyzzy_horiz8(uint8_t *dest, uint8_t *src)
 	dptr = dest;
 
 	for(i=0; i<240; i++) {
+		/* a scanline of zeros blurs to zeros, typical around the smoke */
+		if(!((uintptr_t)sptr & 3)) {
+			const uint32_t *lptr = (const uint32_t*)sptr;
+			for(j=0; j<80; j++) {
+				if(lptr[j]) break;
+			}
+			if(j == 80) {
+				memset(dptr, 0, 320);
+				sptr += 320;
+				dptr += 320;
+				continue;
+			}
+		}
+
 		first = sptr[0];
 		last = sptr[319];
 
