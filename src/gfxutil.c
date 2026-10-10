@@ -514,6 +514,38 @@ static void add_pal565_span(uint16_t *dest, const uint8_t *src, long count, cons
 	}
 }
 
+/* Palette index 0 is usually black, which adds nothing; in that case runs of
+ * four zero source pixels are skipped without touching the destination.
+ */
+static void add_pal565_sparse(uint16_t *dest, const uint8_t *src, long count, const uint16_t *pal565)
+{
+	const uint8_t *start;
+
+	if(pal565[0]) {
+		add_pal565_span(dest, src, count, pal565);
+		return;
+	}
+
+	while(count >= 4) {
+		if(!*(const uint32_t*)src) {
+			src += 4;
+			dest += 4;
+			count -= 4;
+			continue;
+		}
+		start = src;
+		do {
+			src += 4;
+			count -= 4;
+		} while(count >= 4 && *(const uint32_t*)src);
+		add_pal565_span(dest, start, src - start, pal565);
+		dest += src - start;
+	}
+	if(count) {
+		add_pal565_span(dest, src, count, pal565);
+	}
+}
+
 void overlay_add_pal(uint16_t *dest, uint8_t *src, int xsz, int ysz, int pitch_pix, unsigned int *pal)
 {
 	int i;
@@ -522,7 +554,7 @@ void overlay_add_pal(uint16_t *dest, uint8_t *src, int xsz, int ysz, int pitch_p
 	conv_pal565(pal565, pal);
 
 	for(i=0; i<ysz; i++) {
-		add_pal565_span(dest, src, xsz, pal565);
+		add_pal565_sparse(dest, src, xsz, pal565);
 		src += pitch_pix;
 		dest += 320;
 	}
@@ -533,7 +565,7 @@ void overlay_full_add_pal(uint16_t *dest, uint8_t *src, unsigned int *pal)
 	uint16_t pal565[256];
 
 	conv_pal565(pal565, pal);
-	add_pal565_span(dest, src, 320 * 240, pal565);
+	add_pal565_sparse(dest, src, 320 * 240, pal565);
 }
 
 #else	/* !M68K_ASM */
