@@ -310,9 +310,16 @@ static void vfield_eval(struct vfield *vf, int32_t x, int32_t y, struct ivec2 *d
 	struct ivec2 *p1, *p2;
 	struct ivec2 left, right;
 
-	/* after this, x/y is left in 24.8 */
-	x = ((x - vf->pos.x) / (vf->size.x >> 8) + 128) * vf->width;
-	y = ((y - vf->pos.y) / (vf->size.y >> 8) + 128) * vf->height;
+	/* after this, x/y is left in 24.8. The field always spans 65536 units,
+	 * so the division is by a constant 256 in practice, which avoids a divs.l
+	 */
+	if(vf->size.x == 65536 && vf->size.y == 65536) {
+		x = ((x - vf->pos.x) / 256 + 128) * vf->width;
+		y = ((y - vf->pos.y) / 256 + 128) * vf->height;
+	} else {
+		x = ((x - vf->pos.x) / (vf->size.x >> 8) + 128) * vf->width;
+		y = ((y - vf->pos.y) / (vf->size.y >> 8) + 128) * vf->height;
+	}
 	/* floor */
 	x &= 0xffffff00;
 	y &= 0xffffff00;
