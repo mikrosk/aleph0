@@ -58,7 +58,7 @@
 #define V_CLAMP_LOW 32
 #define V_HEIGHT_SCALER_SHIFT 7
 #define V_HEIGHT_SCALER (1 << V_HEIGHT_SCALER_SHIFT)
-#define HORIZON (FB_HEIGHT * 0.7)
+#define HORIZON (FB_HEIGHT * 7 / 10)	/* integer, keeps the column loop out of the FPU */
 
 #define HMAP_WIDTH 1024
 #define HMAP_HEIGHT 1024
