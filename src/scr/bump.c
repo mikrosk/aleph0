@@ -738,13 +738,29 @@ static void blitBumpTexWave(int t, unsigned short *vram)
 {
 	const int tt = t >> 5;
 
+	/* sin() is emulated on the 68060, so the two waves are advanced one
+	 * scanline at a time with the angle addition formulas instead
+	 */
+	double s1 = sin(4 * tt / 56.0), c1 = cos(4 * tt / 56.0);
+	double s2 = sin(6 * tt / 48.0), c2 = cos(6 * tt / 48.0);
+	const double ds1 = sin(1.0 / 56.0), dc1 = cos(1.0 / 56.0);
+	const double ds2 = sin(1.0 / 48.0), dc2 = cos(1.0 / 48.0);
+
 	int y;
 	for (y = 0; y < FB_HEIGHT; ++y) {
 		const int yi = (y + tt) & (HMAP_HEIGHT - 1);
 		int* src;
 		int z, u, v, du;
+		double tmp;
 
-		int yp = FB_HEIGHT + sin((y + 4*tt) / 56.0f) * (FB_HEIGHT / 6) + sin((y + 6 * tt) / 48.0f) * (FB_HEIGHT / 8);
+		int yp = FB_HEIGHT + s1 * (FB_HEIGHT / 6) + s2 * (FB_HEIGHT / 8);
+
+		tmp = s1 * dc1 + c1 * ds1;
+		c1 = c1 * dc1 - s1 * ds1;
+		s1 = tmp;
+		tmp = s2 * dc2 + c2 * ds2;
+		c2 = c2 * dc2 - s2 * ds2;
+		s2 = tmp;
 		if (yp == 0) yp = 1;
 		z = (1024 * PROJ_MUL) / yp;
 
