@@ -428,6 +428,116 @@ void overlay_add_full(uint16_t *dest, uint16_t *src)
 	/* TODO */
 }
 
+#ifdef M68K_ASM
+/* Saturated addition of two pairs of RGB565 pixels: %%d0 += %%d1, using
+ * %%d2/%%d3 as scratch. The components are spread over two registers so each
+ * has a free bit above it to catch the carry, and the carries are turned into
+ * saturation masks without branching. Algorithm by Mikael Kalms, see
+ * https://hugi.scene.org/online/hugi18/cosatadd.htm
+ */
+#define SATADD565_D0D1 \
+	"move.l	%%d0,%%d2\n\t" \
+	"move.l	%%d1,%%d3\n\t" \
+	"and.l	#0xf81f07e0,%%d0\n\t" \
+	"and.l	#0x07e0f81f,%%d1\n\t" \
+	"eor.l	%%d0,%%d2\n\t" \
+	"eor.l	%%d1,%%d3\n\t" \
+	"add.l	%%d2,%%d1\n\t" \
+	"add.l	%%d3,%%d0\n\t" \
+	"move.l	%%d1,%%d2\n\t" \
+	"move.l	%%d0,%%d3\n\t" \
+	"roxr.l	#6,%%d3\n\t" \
+	"and.l	#0x08010020,%%d2\n\t" \
+	"and.l	#0x04008020,%%d3\n\t" \
+	"eor.l	#0x08410820,%%d2\n\t" \
+	"eor.l	#0x04208820,%%d3\n\t" \
+	"sub.l	#0x08010020,%%d2\n\t" \
+	"sub.l	#0x04008020,%%d3\n\t" \
+	"asr.l	#6,%%d2\n\t" \
+	"or.l	%%d3,%%d0\n\t" \
+	"or.l	%%d2,%%d1\n\t" \
+	"and.l	#0xf81f07e0,%%d0\n\t" \
+	"and.l	#0x07e0f81f,%%d1\n\t" \
+	"or.l	%%d1,%%d0\n\t"
+
+/* The overlay palettes hold 8 bits per component, but the framebuffer pixels
+ * they are added to have zeroes in the low 3/2/3 bits, so adding the palette
+ * in RGB565 and saturating gives exactly the same result.
+ */
+static void conv_pal565(uint16_t *dest, const unsigned int *pal)
+{
+	int i;
+	unsigned int r, g, b;
+
+	for(i=0; i<256; i++) {
+		r = pal[0] > 255 ? 255 : pal[0];
+		g = pal[1] > 255 ? 255 : pal[1];
+		b = pal[2] > 255 ? 255 : pal[2];
+		*dest++ = PACK_RGB16(r, g, b);
+		pal += 4;
+	}
+}
+
+static void add_pal565_span(uint16_t *dest, const uint8_t *src, long count, const uint16_t *pal565)
+{
+	long npairs = count >> 1;
+	uint32_t res;
+
+	if(npairs) {
+		__asm__ volatile (
+			"moveq	#0,%%d4\n\t"
+			"0:\n\t"
+			"move.b	(%1)+,%%d4\n\t"
+			"move.w	(%3,%%d4.l*2),%%d1\n\t"
+			"swap	%%d1\n\t"
+			"move.b	(%1)+,%%d4\n\t"
+			"move.w	(%3,%%d4.l*2),%%d1\n\t"
+			"move.l	(%0),%%d0\n\t"
+			SATADD565_D0D1
+			"move.l	%%d0,(%0)+\n\t"
+			"subq.l	#1,%2\n\t"
+			"bne.s	0b\n\t"
+			: "+a"(dest), "+a"(src), "+d"(npairs)
+			: "a"(pal565)
+			: "d0", "d1", "d2", "d3", "d4", "cc", "memory");
+	}
+	if(count & 1) {
+		__asm__ (
+			"move.l	%1,%%d0\n\t"
+			"move.l	%2,%%d1\n\t"
+			SATADD565_D0D1
+			"move.l	%%d0,%0\n\t"
+			: "=d"(res)
+			: "d"((uint32_t)*dest << 16), "d"((uint32_t)pal565[*src] << 16)
+			: "d0", "d1", "d2", "d3", "cc");
+		*dest = res >> 16;
+	}
+}
+
+void overlay_add_pal(uint16_t *dest, uint8_t *src, int xsz, int ysz, int pitch_pix, unsigned int *pal)
+{
+	int i;
+	uint16_t pal565[256];
+
+	conv_pal565(pal565, pal);
+
+	for(i=0; i<ysz; i++) {
+		add_pal565_span(dest, src, xsz, pal565);
+		src += pitch_pix;
+		dest += 320;
+	}
+}
+
+void overlay_full_add_pal(uint16_t *dest, uint8_t *src, unsigned int *pal)
+{
+	uint16_t pal565[256];
+
+	conv_pal565(pal565, pal);
+	add_pal565_span(dest, src, 320 * 240, pal565);
+}
+
+#else	/* !M68K_ASM */
+
 void overlay_add_pal(uint16_t *dest, uint8_t *src, int xsz, int ysz, int pitch_pix, unsigned int *pal)
 {
 	int i, j;
@@ -476,6 +586,7 @@ void overlay_full_add_pal(uint16_t *dest, uint8_t *src, unsigned int *pal)
 	/*perf_end();
 	printf("%lu\n", (unsigned long)perf_interval_count);*/
 }
+#endif	/* M68K_ASM */
 
 static void overlay_alpha_c(struct image *dest, int x, int y, const struct image *src,
 		int width, int height)
